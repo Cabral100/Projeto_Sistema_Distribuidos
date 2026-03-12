@@ -11,6 +11,11 @@ services:
     ports:
       - "5555:5555"
       - "5556:5556"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import socket; s=socket.socket(); s.connect(('localhost',5555)); s.close()\""]
+      interval: 3s
+      timeout: 5s
+      retries: 10
 
   servidor:
     build:
@@ -21,18 +26,29 @@ services:
       - ./servidor.py:/app/main.py
       - ./data:/data
     depends_on:
-      - broker
+      broker:
+        condition: service_healthy
     deploy:
       replicas: 2
 
-  cliente:
+  cliente1:
     build:
       context: .
       dockerfile: Dockerfile.java
     environment:
       - BROKER_URL=tcp://broker:5555
-      - BOT_NAME=bot
+      - BOT_NAME=lucas        # <-- nome válido
     depends_on:
-      - servidor
-    deploy:
-      replicas: 2
+      broker:
+        condition: service_healthy
+
+  cliente2:
+    build:
+      context: .
+      dockerfile: Dockerfile.java
+    environment:
+      - BROKER_URL=tcp://broker:5555
+      - BOT_NAME=maria        # <-- nome válido e diferente
+    depends_on:
+      broker:
+        condition: service_healthy

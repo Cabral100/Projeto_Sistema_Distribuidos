@@ -9,20 +9,40 @@ import java.util.*;
 public class cliente {
 
     static final String BROKER   = System.getenv().getOrDefault("BROKER_URL", "tcp://broker:5555");
-    static final String BOT_NAME = System.getenv().getOrDefault("BOT_NAME", "bot1");
+    static final String BOT_NAME = System.getenv().getOrDefault("BOT_NAME", "lucas"); // padrão válido
+
+    static final Set<String> ALLOWED_USERS = Set.of("lucas", "joao", "maria", "carol", "artur");
 
     public static void main(String[] args) throws Exception {
+
+        if (!ALLOWED_USERS.contains(BOT_NAME.toLowerCase())) {
+            System.err.println("[ERRO] BOT_NAME='" + BOT_NAME + "' nao permitido. Validos: " + ALLOWED_USERS);
+            System.exit(1);
+        }
+
+        // Aguarda broker e servidores estarem prontos
+        System.out.println("[" + BOT_NAME + "] Aguardando 5s para infraestrutura subir...");
+        Thread.sleep(5000);
+
         try (ZContext ctx = new ZContext()) {
             ZMQ.Socket socket = ctx.createSocket(ZMQ.REQ);
+            socket.setReceiveTimeOut(5000);
             socket.connect(BROKER);
             System.out.println("[" + BOT_NAME + "] Conectado ao broker " + BROKER);
 
-            // 1. Login com retry em caso de erro
+            // 1. Login com retry
             boolean loggedIn = false;
             while (!loggedIn) {
-                Map<String, Object> dados = Map.of("username", BOT_NAME);
-                socket.send(pack("login", dados));
-                Map<String, Object> resp = unpack(socket.recv());
+                socket.send(pack("login", Map.of("username", BOT_NAME.toLowerCase())));
+                byte[] raw = socket.recv();
+
+                if (raw == null) {
+                    System.out.println("[LOGIN] Sem resposta, tentando novamente em 2s...");
+                    Thread.sleep(2000);
+                    continue;
+                }
+
+                Map<String, Object> resp = unpack(raw);
                 System.out.println("[LOGIN] " + resp.get("status") + " - " + resp.get("mensagem"));
                 loggedIn = "ok".equals(resp.get("status"));
                 if (!loggedIn) Thread.sleep(2000);
@@ -36,7 +56,7 @@ public class cliente {
             criarCanal(socket, "tech");
             criarCanal(socket, "geral"); // teste duplicata
 
-            // 4. Listar novamente após criação
+            // 4. Listar após criação
             listarCanais(socket);
         }
     }
@@ -48,7 +68,7 @@ public class cliente {
     }
 
     static void criarCanal(ZMQ.Socket socket, String canal) throws IOException {
-        Map<String, Object> dados = Map.of("canal", canal, "username", BOT_NAME);
+        Map<String, Object> dados = Map.of("canal", canal, "username", BOT_NAME.toLowerCase());
         socket.send(pack("criar_canal", dados));
         Map<String, Object> resp = unpack(socket.recv());
         System.out.println("[CRIAR] " + resp.get("status") + " - " + resp.get("mensagem"));

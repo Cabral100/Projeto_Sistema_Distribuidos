@@ -12,6 +12,8 @@ os.makedirs(DATA_DIR, exist_ok=True)
 USERS_FILE    = f"{DATA_DIR}/users.json"
 CHANNELS_FILE = f"{DATA_DIR}/channels.json"
 
+ALLOWED_USERS = {"lucas", "joao", "maria", "carol", "artur"}
+
 def load_json(path):
     if os.path.exists(path):
         with open(path) as f: return json.load(f)
@@ -32,13 +34,13 @@ while True:
     resp   = {"timestamp": time.time()}
 
     if funcao == "login":
-        username = dados.get("username", "").strip()
+        username = dados.get("username", "").strip().lower() 
         users    = load_json(USERS_FILE)
 
         if not username:
             resp.update({"status": "erro", "mensagem": "Username vazio"})
-        elif not username.replace("_", "").isalnum():
-            resp.update({"status": "erro", "mensagem": "Username invalido (use letras e numeros)"})
+        elif username not in ALLOWED_USERS:
+            resp.update({"status": "erro", "mensagem": f"Usuario '{username}' nao autorizado. Validos: {', '.join(sorted(ALLOWED_USERS))}"})
         else:
             if username not in users: users[username] = []
             users[username].append({"login_at": time.time()})
