@@ -1,30 +1,38 @@
-version: '3.8'
-
 services:
-  server1:
-    build: .
-    command: python servidor.py 5001
+
+  broker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: cc7261:pyzmq
+    container_name: broker
     volumes:
-      - ./data1:/app/data 
+      - ./broker.py:/app/main.py
     ports:
-      - "5001:5001"
+      - "5555:5555"
+      - "5556:5556"
 
-  server2:
-    build: .
-    command: python servidor.py 5002
+  servidor:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: cc7261:pyzmq
     volumes:
-      - ./data2:/app/data 
-    ports:
-      - "5002:5002"
-
-  client1:
-    build: .
-    command: python cliente.py server1 5001
+      - ./servidor.py:/app/main.py
+      - ./data:/data
     depends_on:
-      - server1
+      - broker
+    deploy:
+      replicas: 2
 
-  client2:
-    build: .
-    command: python cliente.py server2 5002
+  cliente:
+    build:
+      context: .
+      dockerfile: Dockerfile.java
+    environment:
+      - BROKER_URL=tcp://broker:5555
+      - BOT_NAME=bot
     depends_on:
-      - server2
+      - servidor
+    deploy:
+      replicas: 2

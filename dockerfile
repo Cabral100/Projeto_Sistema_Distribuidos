@@ -1,7 +1,4 @@
-FROM python:3.13.7-alpine3.21
-
+FROM python:3.11-slim
 WORKDIR /app
-
-RUN pip install pyzmq
-
+RUN pip install pyzmq msgpack
 CMD ["python", "main.py"]
