@@ -9,7 +9,7 @@ import java.util.*;
 public class cliente {
 
     static final String BROKER   = System.getenv().getOrDefault("BROKER_URL", "tcp://broker:5555");
-    static final String BOT_NAME = System.getenv().getOrDefault("BOT_NAME", "lucas"); // padrão válido
+    static final String BOT_NAME = System.getenv().getOrDefault("BOT_NAME", "lucas"); 
 
     static final Set<String> ALLOWED_USERS = Set.of("lucas", "joao", "maria", "carol", "artur");
 
@@ -20,7 +20,6 @@ public class cliente {
             System.exit(1);
         }
 
-        // Aguarda broker e servidores estarem prontos
         System.out.println("[" + BOT_NAME + "] Aguardando 5s para infraestrutura subir...");
         Thread.sleep(5000);
 
@@ -30,7 +29,7 @@ public class cliente {
             socket.connect(BROKER);
             System.out.println("[" + BOT_NAME + "] Conectado ao broker " + BROKER);
 
-            // 1. Login com retry
+            
             boolean loggedIn = false;
             while (!loggedIn) {
                 socket.send(pack("login", Map.of("username", BOT_NAME.toLowerCase())));
@@ -48,15 +47,15 @@ public class cliente {
                 if (!loggedIn) Thread.sleep(2000);
             }
 
-            // 2. Listar canais existentes
+
             listarCanais(socket);
 
-            // 3. Criar canais
+
             criarCanal(socket, "geral");
             criarCanal(socket, "tech");
-            criarCanal(socket, "geral"); // teste duplicata
-
-            // 4. Listar após criação
+            criarCanal(socket, "geral"); 
+            criarCanal(socket, "tech");
+            criarCanal(socket, "completo"); 
             listarCanais(socket);
         }
     }

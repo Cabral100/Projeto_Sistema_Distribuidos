@@ -52,3 +52,4 @@ services:
     depends_on:
       broker:
         condition: service_healthy
+
