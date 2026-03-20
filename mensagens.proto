@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+package sistema;
+
+option java_package = "sistema";
+option java_outer_classname = "Mensagens";
+
+message Envelope {
+    string funcao = 1;      
+    double timestamp = 2;   
+    string username = 3;
+    string parametro = 4;   
+}
+
+message Resposta {
+    string status = 1;      
+    string mensagem = 2;
+    double timestamp = 3;   
+    repeated string canais = 4;
+}

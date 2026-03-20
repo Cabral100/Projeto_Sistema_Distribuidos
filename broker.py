@@ -12,7 +12,7 @@ backend.bind("tcp://*:5556")
 poller.register(frontend, zmq.POLLIN)
 poller.register(backend, zmq.POLLIN)
 
-print("Broker ativo (Portas 5555/5556)...")
+print("[BROKER] Aguardando mensagens...", flush=True)
 
 while True:
     socks = dict(poller.poll())
