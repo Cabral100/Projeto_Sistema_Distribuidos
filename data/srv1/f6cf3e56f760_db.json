@@ -1,0 +1,39 @@
+{
+    "logins": [
+        {
+            "user": "maria",
+            "ts": 1774043658.98
+        },
+        {
+            "user": "lucas",
+            "ts": 1774043713.619
+        },
+        {
+            "user": "lucas",
+            "ts": 1774043807.236
+        },
+        {
+            "user": "maria",
+            "ts": 1774043862.67
+        },
+        {
+            "user": "maria",
+            "ts": 1774043975.566
+        },
+        {
+            "user": "lucas",
+            "ts": 1774044384.317
+        },
+        {
+            "user": "maria",
+            "ts": 1774044457.08
+        }
+    ],
+    "canais": [
+        "geral",
+        "tech",
+        "completo",
+        "canal-lucas",
+        "canal-maria"
+    ]
+}
