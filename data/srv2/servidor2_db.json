@@ -1928,6 +1928,146 @@
             "mensagem": "msg-6007 de maria",
             "timestamp_envio": 1775680523.181,
             "timestamp_recebimento": 1775680523.1818233
+        },
+        {
+            "canal": "canal-maria",
+            "username": "maria",
+            "mensagem": "msg-8500 de maria",
+            "timestamp_envio": 1775680524.187,
+            "timestamp_recebimento": 1775680524.1886625
+        },
+        {
+            "canal": "tech",
+            "username": "maria",
+            "mensagem": "msg-2563 de maria",
+            "timestamp_envio": 1775680525.195,
+            "timestamp_recebimento": 1775680525.1958635
+        },
+        {
+            "canal": "canal-maria",
+            "username": "maria",
+            "mensagem": "msg-4204 de maria",
+            "timestamp_envio": 1775680526.199,
+            "timestamp_recebimento": 1775680526.2000124
+        },
+        {
+            "canal": "canal-lucas-362",
+            "username": "maria",
+            "mensagem": "msg-3875 de maria",
+            "timestamp_envio": 1775680528.229,
+            "timestamp_recebimento": 1775680528.2305357
+        },
+        {
+            "canal": "canal-maria",
+            "username": "maria",
+            "mensagem": "msg-8915 de maria",
+            "timestamp_envio": 1775680529.235,
+            "timestamp_recebimento": 1775680529.2357788
+        },
+        {
+            "canal": "canal-maria",
+            "username": "maria",
+            "mensagem": "msg-2401 de maria",
+            "timestamp_envio": 1775680530.239,
+            "timestamp_recebimento": 1775680530.2403069
+        },
+        {
+            "canal": "tech",
+            "username": "maria",
+            "mensagem": "msg-7956 de maria",
+            "timestamp_envio": 1775680531.248,
+            "timestamp_recebimento": 1775680531.2495246
+        },
+        {
+            "canal": "canal-lucas-362",
+            "username": "maria",
+            "mensagem": "msg-4867 de maria",
+            "timestamp_envio": 1775680532.259,
+            "timestamp_recebimento": 1775680532.260443
+        },
+        {
+            "canal": "canal-lucas-362",
+            "username": "maria",
+            "mensagem": "msg-9771 de maria",
+            "timestamp_envio": 1775680533.264,
+            "timestamp_recebimento": 1775680533.2647724
+        },
+        {
+            "canal": "tech",
+            "username": "maria",
+            "mensagem": "msg-7031 de maria",
+            "timestamp_envio": 1775680534.268,
+            "timestamp_recebimento": 1775680534.269035
+        },
+        {
+            "canal": "geral",
+            "username": "maria",
+            "mensagem": "msg-2905 de maria",
+            "timestamp_envio": 1775680535.273,
+            "timestamp_recebimento": 1775680535.2739449
+        },
+        {
+            "canal": "canal-lucas-362",
+            "username": "maria",
+            "mensagem": "msg-3632 de maria",
+            "timestamp_envio": 1775680536.277,
+            "timestamp_recebimento": 1775680536.2782087
+        },
+        {
+            "canal": "canal-lucas",
+            "username": "maria",
+            "mensagem": "msg-5895 de maria",
+            "timestamp_envio": 1775680538.291,
+            "timestamp_recebimento": 1775680538.292143
+        },
+        {
+            "canal": "canal-lucas-362",
+            "username": "maria",
+            "mensagem": "msg-2219 de maria",
+            "timestamp_envio": 1775680539.295,
+            "timestamp_recebimento": 1775680539.2961793
+        },
+        {
+            "canal": "canal-lucas",
+            "username": "maria",
+            "mensagem": "msg-3950 de maria",
+            "timestamp_envio": 1775680540.299,
+            "timestamp_recebimento": 1775680540.3006272
+        },
+        {
+            "canal": "canal-lucas-362",
+            "username": "maria",
+            "mensagem": "msg-6282 de maria",
+            "timestamp_envio": 1775680541.308,
+            "timestamp_recebimento": 1775680541.3090928
+        },
+        {
+            "canal": "tech",
+            "username": "maria",
+            "mensagem": "msg-7842 de maria",
+            "timestamp_envio": 1775680542.314,
+            "timestamp_recebimento": 1775680542.316111
+        },
+        {
+            "canal": "geral",
+            "username": "maria",
+            "mensagem": "msg-2105 de maria",
+            "timestamp_envio": 1775680543.324,
+            "timestamp_recebimento": 1775680543.3247123
+        },
+        {
+            "canal": "tech",
+            "username": "maria",
+            "mensagem": "msg-6621 de maria",
+            "timestamp_envio": 1775680544.328,
+            "timestamp_recebimento": 1775680544.3299952
+        },
+        {
+            "canal": "canal-lucas-362",
+            "username": "maria",
+            "mensagem": "msg-6526 de maria",
+            "timestamp_envio": 1775680545.338,
+            "timestamp_recebimento": 1775680545.3387327
         }
     ]
 }
