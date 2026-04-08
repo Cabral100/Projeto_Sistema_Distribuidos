@@ -10,6 +10,7 @@ message Envelope {
     double timestamp = 2;   
     string username = 3;
     string parametro = 4;   
+    string mensagem = 5;   
 }
 
 message Resposta {
@@ -17,4 +18,12 @@ message Resposta {
     string mensagem = 2;
     double timestamp = 3;   
     repeated string canais = 4;
+}
+
+message Publicacao {
+    string canal = 1;
+    string username = 2;
+    string mensagem = 3;
+    double timestamp_envio = 4;
+    double timestamp_recebimento = 5;
 }
