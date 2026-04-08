@@ -11,6 +11,10 @@ Conforme especificado, o proxy Pub/Sub é um container separado do broker Req-Re
 - Porta **5558** como **XPUB** (distribui mensagens para os clientes inscritos)
 
 O servidor ao receber uma requisição `publicar_canal` via Req-Rep, publica a mensagem no proxy Pub/Sub conectando-se como `PUB` na porta 5557. O cliente Java mantém uma thread dedicada conectada como `SUB` na porta 5558, inscrita nos tópicos escolhidos.
+### 2. Serialização (Protocol Buffers)
+Para cumprir o requisito de comunicação binária:
+* Utilizei **Google Protobuf** para definir um contrato rígido (`mensagens.proto`).
+* Todas as mensagens incluem obrigatoriamente um campo `timestamp` (double) para rastreabilidade, conforme exigido.
 
 ### 2. Tópicos = Nomes dos Canais
 O nome do canal é usado diretamente como prefixo do tópico ZMQ (`canal.encode()`). Isso permite que os subscribers filtrem mensagens apenas dos canais de interesse com `sub.subscribe(canal.getBytes())`.
@@ -53,3 +57,7 @@ docker compose up --build
 - `mensagens.proto` — adicionados campos `mensagem` no `Envelope` e nova mensagem `Publicacao`
 - `docker-compose.yml` — adicionado serviço `proxy_pubsub` com portas 5557/5558
 - `README.md` — atualizado com explicações da Parte 2
+1. Certifique-se de ter os arquivos `mensagens.proto`, `cliente.java`, `servidor.py` e `broker.py` na estrutura correta.
+2. Execute o comando:
+   ```bash
+   docker compose up --build
