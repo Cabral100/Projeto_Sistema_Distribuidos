@@ -12,7 +12,7 @@ Este projeto implementa um sistema de mensageria distribuída utilizando uma arq
 
 ### 2. Serialização (Protocol Buffers)
 Para cumprir o requisito de comunicação binária:
-* Utilizamos **Google Protobuf** para definir um contrato rígido (`mensagens.proto`).
+* Utilizei **Google Protobuf** para definir um contrato rígido (`mensagens.proto`).
 * Todas as mensagens incluem obrigatoriamente um campo `timestamp` (double) para rastreabilidade, conforme exigido.
 
 ### 3. Persistência de Dados
