@@ -1,6 +1,5 @@
-# Projeto Sistemas Distribuídos
+# Projeto Sistemas Distribuídos - Parte 3
 
-## Parte 3 — Relógios e Heartbeat
 
 ### O que foi implementado
 
