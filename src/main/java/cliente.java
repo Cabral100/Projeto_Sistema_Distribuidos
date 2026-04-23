@@ -10,14 +10,31 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 public class cliente {
     private static final DateTimeFormatter dtf = DateTimeFormatter.ofPattern("HH:mm:ss");
     private static final Random rng = new Random();
 
+    // ── Relógio lógico de Lamport ────────────────────────────────────────────
+    private static final AtomicLong relogioLogico = new AtomicLong(0);
+
+    private static long rlEnviar() {
+        return relogioLogico.incrementAndGet();
+    }
+
+    private static long rlReceber(long recebido) {
+        long atual, novo;
+        do {
+            atual = relogioLogico.get();
+            novo = Math.max(atual, recebido) + 1;
+        } while (!relogioLogico.compareAndSet(atual, novo));
+        return novo;
+    }
+
     private static void log(String user, String msg) {
-        System.out.println("[" + dtf.format(LocalTime.now()) + "] [" + user + "] " + msg);
+        System.out.println("[" + dtf.format(LocalTime.now()) + "] [" + user + "] [RL=" + relogioLogico.get() + "] " + msg);
     }
 
     static class AssinanteThread extends Thread {
@@ -52,11 +69,9 @@ public class cliente {
         public void run() {
             ZMQ.Socket sub = ctx.createSocket(ZMQ.SUB);
             sub.connect(pubsubUrl);
-
             List<String> inscritosConhecidos = new ArrayList<>();
 
             while (!Thread.currentThread().isInterrupted()) {
-                // Verifica novos canais para inscrever
                 synchronized (this) {
                     for (String canal : canaisInscritos) {
                         if (!inscritosConhecidos.contains(canal)) {
@@ -72,24 +87,23 @@ public class cliente {
                     try {
                         Publicacao pub = Publicacao.parseFrom(payload);
                         double tsRecebimento = System.currentTimeMillis() / 1000.0;
+                        long rlAtual = rlReceber(pub.getRelogioLogico());
 
                         LocalTime tEnvio = LocalTime.ofInstant(
                             Instant.ofEpochMilli((long)(pub.getTimestampEnvio() * 1000)),
-                            ZoneId.systemDefault()
-                        );
+                            ZoneId.systemDefault());
                         LocalTime tRecebimento = LocalTime.ofInstant(
                             Instant.ofEpochMilli((long)(tsRecebimento * 1000)),
-                            ZoneId.systemDefault()
-                        );
+                            ZoneId.systemDefault());
 
                         System.out.println(
                             "[" + dtf.format(LocalTime.now()) + "] [" + user + "] " +
+                            "[RL=" + rlAtual + "] " +
                             "[CANAL: " + pub.getCanal() + "] " +
                             "[DE: " + pub.getUsername() + "] " +
                             "[MSG: " + pub.getMensagem() + "] " +
                             "[ENVIADO: " + dtf.format(tEnvio) + "] " +
-                            "[RECEBIDO: " + dtf.format(tRecebimento) + "]"
-                        );
+                            "[RECEBIDO: " + dtf.format(tRecebimento) + "]");
                     } catch (Exception e) {
                         log(user, "Erro ao deserializar publicacao: " + e.getMessage());
                     }
@@ -102,9 +116,9 @@ public class cliente {
     }
 
     public static void main(String[] args) throws Exception {
-        String brokerUrl  = System.getenv().getOrDefault("BROKER_URL",  "tcp://broker:5555");
-        String pubsubUrl  = System.getenv().getOrDefault("PUBSUB_URL",  "tcp://proxy_pubsub:5558");
-        String user       = System.getenv().getOrDefault("BOT_NAME",    "bot");
+        String brokerUrl = System.getenv().getOrDefault("BROKER_URL", "tcp://broker:5555");
+        String pubsubUrl = System.getenv().getOrDefault("PUBSUB_URL", "tcp://proxy_pubsub:5558");
+        String user      = System.getenv().getOrDefault("BOT_NAME",   "bot");
 
         Thread.sleep(3000);
 
@@ -119,15 +133,16 @@ public class cliente {
 
             boolean logado = false;
             while (!logado) {
-                Envelope req = Envelope.newBuilder()
+                socket.send(Envelope.newBuilder()
                     .setFuncao("login")
                     .setUsername(user)
                     .setTimestamp(System.currentTimeMillis() / 1000.0)
-                    .build();
-                socket.send(req.toByteArray());
+                    .setRelogioLogico(rlEnviar())
+                    .build().toByteArray());
                 byte[] reply = socket.recv();
                 if (reply != null) {
                     Resposta res = Resposta.parseFrom(reply);
+                    rlReceber(res.getRelogioLogico());
                     log(user, "Login: " + res.getStatus() + " (" + res.getMensagem() + ")");
                     if (res.getStatus().equals("ok")) logado = true;
                 }
@@ -139,11 +154,14 @@ public class cliente {
                     .setFuncao("listar_canais")
                     .setUsername(user)
                     .setTimestamp(System.currentTimeMillis() / 1000.0)
+                    .setRelogioLogico(rlEnviar())
                     .build().toByteArray());
                 byte[] reply = socket.recv();
                 if (reply == null) continue;
 
-                List<String> canais = new ArrayList<>(Resposta.parseFrom(reply).getCanaisList());
+                Resposta resLista = Resposta.parseFrom(reply);
+                rlReceber(resLista.getRelogioLogico());
+                List<String> canais = new ArrayList<>(resLista.getCanaisList());
                 log(user, "Canais disponiveis: " + canais);
 
                 if (canais.size() < 5) {
@@ -153,17 +171,23 @@ public class cliente {
                         .setUsername(user)
                         .setParametro(novoCanal)
                         .setTimestamp(System.currentTimeMillis() / 1000.0)
+                        .setRelogioLogico(rlEnviar())
                         .build().toByteArray());
                     Resposta resCanal = Resposta.parseFrom(socket.recv());
+                    rlReceber(resCanal.getRelogioLogico());
                     log(user, "Criar canal '" + novoCanal + "': " + resCanal.getStatus());
-                    // Atualiza lista
                     socket.send(Envelope.newBuilder()
                         .setFuncao("listar_canais")
                         .setUsername(user)
                         .setTimestamp(System.currentTimeMillis() / 1000.0)
+                        .setRelogioLogico(rlEnviar())
                         .build().toByteArray());
                     reply = socket.recv();
-                    if (reply != null) canais = new ArrayList<>(Resposta.parseFrom(reply).getCanaisList());
+                    if (reply != null) {
+                        Resposta resCanalLista = Resposta.parseFrom(reply);
+                        rlReceber(resCanalLista.getRelogioLogico());
+                        canais = new ArrayList<>(resCanalLista.getCanaisList());
+                    }
                 }
 
                 if (assinante.qtdInscritos() < 3 && !canais.isEmpty()) {
@@ -182,11 +206,13 @@ public class cliente {
                         .setParametro(canalEscolhido)
                         .setMensagem(texto)
                         .setTimestamp(System.currentTimeMillis() / 1000.0)
+                        .setRelogioLogico(rlEnviar())
                         .build().toByteArray());
 
                     byte[] pubReply = socket.recv();
                     if (pubReply != null) {
                         Resposta res = Resposta.parseFrom(pubReply);
+                        rlReceber(res.getRelogioLogico());
                         log(user, "Publicou em '" + canalEscolhido + "': " + res.getStatus());
                     }
                     Thread.sleep(1000);

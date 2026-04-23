@@ -11,6 +11,7 @@ message Envelope {
     string username = 3;
     string parametro = 4;   
     string mensagem = 5;   
+    int64 relogio_logico = 6;  
 }
 
 message Resposta {
@@ -18,6 +19,7 @@ message Resposta {
     string mensagem = 2;
     double timestamp = 3;   
     repeated string canais = 4;
+    int64 relogio_logico = 5; 
 }
 
 message Publicacao {
@@ -26,4 +28,23 @@ message Publicacao {
     string mensagem = 3;
     double timestamp_envio = 4;
     double timestamp_recebimento = 5;
+    int64 relogio_logico = 6; 
+}
+
+message ReqReferencia { // "rank", "list", "heartbeat", "get_time"
+    string nome = 2;
+    int64 relogio_logico = 3;
+}
+
+message ResReferencia {
+    string status = 1;
+    int32 rank = 2;
+    double timestamp = 3;
+    repeated ServidorInfo servidores = 4;
+    int64 relogio_logico = 5;
+}
+
+message ServidorInfo {
+    string nome = 1;
+    int32 rank = 2;
 }
