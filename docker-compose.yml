@@ -27,6 +27,19 @@ services:
       timeout: 2s
       retries: 5
 
+  referencia:
+    build: .
+    container_name: referencia
+    volumes:
+      - ./referencia.py:/app/main.py
+    ports:
+      - "5559:5559"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import socket; s=socket.socket(); s.connect((\"localhost\",5559)); s.close()'"]
+      interval: 1s
+      timeout: 2s
+      retries: 10
+
   servidor1:
     build: .
     volumes:
@@ -34,10 +47,13 @@ services:
       - ./data/srv1:/data
     environment:
       - SERVER_NAME=servidor1
+      - REFERENCIA_URL=tcp://referencia:5559
     depends_on:
       broker:
         condition: service_healthy
       proxy_pubsub:
+        condition: service_healthy
+      referencia:
         condition: service_healthy
 
   servidor2:
@@ -47,10 +63,13 @@ services:
       - ./data/srv2:/data
     environment:
       - SERVER_NAME=servidor2
+      - REFERENCIA_URL=tcp://referencia:5559
     depends_on:
       broker:
         condition: service_healthy
       proxy_pubsub:
+        condition: service_healthy
+      referencia:
         condition: service_healthy
 
   cliente1:
