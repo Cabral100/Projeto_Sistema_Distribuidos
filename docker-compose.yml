@@ -48,6 +48,9 @@ services:
     environment:
       - SERVER_NAME=servidor1
       - REFERENCIA_URL=tcp://referencia:5559
+      - PUBSUB_SUB_URL=tcp://proxy_pubsub:5558
+    ports:
+      - "5560:5560"
     depends_on:
       broker:
         condition: service_healthy
@@ -64,6 +67,9 @@ services:
     environment:
       - SERVER_NAME=servidor2
       - REFERENCIA_URL=tcp://referencia:5559
+      - PUBSUB_SUB_URL=tcp://proxy_pubsub:5558
+    ports:
+      - "5561:5560"
     depends_on:
       broker:
         condition: service_healthy
