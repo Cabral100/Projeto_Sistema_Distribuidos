@@ -1,77 +1,92 @@
-# Projeto Sistemas Distribuídos
+# Projeto Sistemas Distribuídos - Parte 4
 
-## 📌 Visão Geral
+## O que foi implementado
 
-Sistema de mensageria distribuída onde bots (clientes Java) se comunicam com servidores Python através de um broker intermediário. O sistema suporta login, criação de canais e publicação de mensagens em tempo real.
-
-**Tecnologias utilizadas:**
-- **Java** — clientes/bots com `JeroMQ`
-- **Python** — broker, servidor e proxy com `pyzmq`
-- **ZeroMQ** — middleware de comunicação assíncrona
-- **Protocol Buffers (Protobuf)** — serialização binária de todas as mensagens
-- **Docker / Docker Compose** — orquestração dos serviços
+Esta parte modifica a sincronização do relógio físico dos servidores. Em vez de usar o serviço de referência como fonte de tempo, os próprios servidores elegem um **coordenador** entre si e ele passa a ser responsável por fornecer a hora correta aos demais. O serviço de referência continua existindo para rank, lista e heartbeat, mas **não retorna mais o timestamp no heartbeat**.
 
 ---
 
-## Parte 1 — Request-Reply com Broker
+## Eleição — Algoritmo Bully
 
-### O que foi implementado
+Cada servidor mantém uma variável com o nome do coordenador atual. Quando um servidor inicia ou detecta que o coordenador não está mais respondendo, ele dispara uma eleição seguindo o algoritmo Bully:
 
-Os bots conseguem se conectar ao sistema, fazer login, criar canais e listar os canais existentes. Toda a comunicação passa por um broker intermediário que distribui as requisições entre os servidores disponíveis.
+1. Consulta o serviço de referência com `funcao = "list"` para obter a lista de servidores ativos e seus ranks
+2. Envia `ReqS2S(funcao="eleicao")` para todos os servidores com rank maior
+3. Se algum responder `ok = True`, aguarda o anúncio do novo coordenador via pub/sub
+4. Se **nenhum** responder, declara-se coordenador e publica seu próprio nome no tópico `servers`
 
-### Troca de mensagens
+Todos os servidores escutam o tópico `servers` via sub/pub e atualizam sua variável de coordenador ao receber o anúncio.
 
-O padrão utilizado é **Req-Rep** com broker `ROUTER/DEALER`:
+```
+Servidor A  ──── REQ: eleicao ───────► Servidor B
+            ◄─── REP: ok ────────────
 
-- O cliente usa socket `REQ` e envia um `Envelope` Protobuf contendo: `funcao`, `username`, `parametro` e `timestamp` de envio.
-- O broker (`ROUTER` na porta `5555` para clientes, `DEALER` na porta `5556` para servidores) roteia a requisição para um servidor disponível.
-- O servidor responde com uma `Resposta` Protobuf contendo: `status`, `mensagem`, lista de `canais` e `timestamp`.
-
-Todas as mensagens obrigatoriamente incluem o `timestamp` do momento do envio para rastreabilidade.
-
-### Armazenamento
-
-Cada servidor persiste seus dados em `/data/{SERVER_NAME}_db.json` com:
-- `logins` — histórico de autenticações (usuário + timestamp)
-- `canais` — lista de canais criados
-
-Cada instância de servidor possui seu próprio volume isolado (`/data/srv1`, `/data/srv2`).
+Servidor B  ──── PUB: [servers] nome_coordenador ────► todos
+```
 
 ---
 
-## Parte 2 — Publisher-Subscriber para publicação em canais
+## Sincronização do Relógio — Algoritmo de Berkeley
 
-### O que foi implementado
+A cada **15 mensagens** processadas, cada servidor envia o heartbeat à referência e em seguida sincroniza o relógio com o coordenador:
 
-Os bots agora podem publicar mensagens em canais e receber em tempo real as mensagens dos canais nos quais estão inscritos, usando um segundo padrão de comunicação paralelo ao Req-Rep.
+- **Subordinado** — envia `ReqS2S(funcao="sync")` ao coordenador, recebe `ResS2S(timestamp=hora_do_coordenador)` e calcula o offset:
 
-### Troca de mensagens
+```
+offset = hora_coordenador - hora_local
+```
 
-Foi adicionado um **proxy Pub/Sub separado** do broker Req-Rep, conforme requisito:
+- **Coordenador** — não sincroniza, pois ele é a fonte de tempo
+- Se o coordenador **não responder** ao sync, o servidor inicia uma nova eleição automaticamente
 
-- Porta `5557` como `XSUB` — recebe publicações dos servidores
-- Porta `5558` como `XPUB` — distribui mensagens para os clientes inscritos
-
-O fluxo de uma publicação funciona assim:
-1. O bot envia uma requisição `publicar_canal` ao servidor via Req-Rep (com `canal`, `mensagem` e `timestamp`).
-2. O servidor publica a mensagem no proxy Pub/Sub usando o **nome do canal como tópico**.
-3. O servidor retorna `ok/erro` ao bot.
-4. Todos os bots inscritos naquele canal recebem a mensagem via Pub/Sub.
-
-A inscrição em canais é feita exclusivamente no cliente: cada bot mantém uma `AssinanteThread` dedicada com socket `SUB` conectado ao proxy, podendo se inscrever em múltiplos tópicos na mesma conexão. Ao receber uma mensagem, exibe: canal, remetente, conteúdo, timestamp de envio e timestamp de recebimento.
-
-Todas as mensagens (tanto a requisição ao servidor quanto a publicação no canal) contêm o `timestamp` de envio.
-
-### Armazenamento
-
-O servidor passou a persistir também as publicações no mesmo arquivo `/data/{SERVER_NAME}_db.json`, adicionando o campo:
-- `publicacoes` — lista de todas as mensagens publicadas, contendo: canal, usuário, mensagem, `timestamp_envio` (do cliente) e `timestamp_recebimento` (do servidor)
-
-Isso permite recuperar o histórico completo de todas as publicações feitas por qualquer bot.
+```
+Servidor  ──── REQ: sync ────────────► Coordenador
+          ◄─── REP: hora correta ─────
+```
 
 ---
 
-## 🚀 Como Executar
+## Comunicação entre servidores (S2S)
+
+Cada servidor abre um socket `REP` na porta `5560` exclusivamente para atender requisições de outros servidores. As mensagens utilizam dois novos tipos Protobuf adicionados ao `mensagens.proto`:
+
+- `ReqS2S` — campos: `funcao` ("eleicao" ou "sync") e `relogio_logico`
+- `ResS2S` — campos: `ok` (bool), `timestamp` (hora do coordenador, preenchido apenas no sync) e `relogio_logico`
+
+---
+
+## Arquivos alterados
+
+| Arquivo | Alteração |
+|---|---|
+| `mensagens.proto` | Adicionadas as mensagens `ReqS2S` e `ResS2S` para comunicação direta entre servidores |
+| `referencia.py` | Heartbeat não preenche mais `res.timestamp` na resposta |
+| `servidor.py` | Variável de coordenador, eleição Bully, sync Berkeley, socket REP S2S na porta 5560, thread de eleição, thread de escuta do tópico `servers` |
+| `docker-compose.yml` | Porta `5560` exposta nos servidores; variável `PUBSUB_SUB_URL` adicionada |
+| `broker.py` | Sem alterações |
+| `proxy_pubsub.py` | Sem alterações |
+| `cliente.java` | Sem alterações |
+
+---
+
+## Troca de mensagens — visão geral
+
+```
+Servidor  ──── REQ: heartbeat ───────► Referência
+          ◄─── REP: ok ──────────────  (sem timestamp — hora vem do coordenador)
+
+Servidor  ──── REQ: eleicao ─────────► Servidores com rank maior
+          ◄─── REP: ok ──────────────
+
+Servidor  ──── PUB: [servers] nome ──► todos os servidores (via proxy pub/sub)
+
+Servidor  ──── REQ: sync ────────────► Coordenador
+          ◄─── REP: hora correta ─────
+```
+
+---
+
+## Como Executar
 
 ```bash
 docker compose up --build
