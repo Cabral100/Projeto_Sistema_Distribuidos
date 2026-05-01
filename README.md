@@ -1,77 +1,39 @@
-# Projeto Sistemas Distribuídos
+# Sistema de Troca de Mensagens Instantâneas
 
-## 📌 Visão Geral
+Projeto da disciplina de Sistemas Distribuídos do curso de Ciência da Computação
 
-Sistema de mensageria distribuída onde bots (clientes Java) se comunicam com servidores Python através de um broker intermediário. O sistema suporta login, criação de canais e publicação de mensagens em tempo real.
+## Linguagens
 
-**Tecnologias utilizadas:**
-- **Java** — clientes/bots com `JeroMQ`
-- **Python** — broker, servidor e proxy com `pyzmq`
-- **ZeroMQ** — middleware de comunicação assíncrona
-- **Protocol Buffers (Protobuf)** — serialização binária de todas as mensagens
-- **Docker / Docker Compose** — orquestração dos serviços
+- **Servidor:** Python
+- **Cliente:** Java
 
----
+Ambas foram escolhidas por conta da experiência prévia no desenvolvimento de projetos com elas.
 
-## Parte 1 — Request-Reply com Broker
+## Serialização
 
-### O que foi implementado
+A troca de mensagens utiliza Protobuf. Além da experiência prévia com a tecnologia, é o formato binário mais utilizado atualmente para comunicação entre serviços distribuídos.
 
-Os bots conseguem se conectar ao sistema, fazer login, criar canais e listar os canais existentes. Toda a comunicação passa por um broker intermediário que distribui as requisições entre os servidores disponíveis.
+## Persistência
 
-### Troca de mensagens
+SQLite para persistência das mensagens, por conta da simplicidade e por não exigir infraestrutura adicional.
 
-O padrão utilizado é **Req-Rep** com broker `ROUTER/DEALER`:
+## Troca de mensagens
 
-- O cliente usa socket `REQ` e envia um `Envelope` Protobuf contendo: `funcao`, `username`, `parametro` e `timestamp` de envio.
-- O broker (`ROUTER` na porta `5555` para clientes, `DEALER` na porta `5556` para servidores) roteia a requisição para um servidor disponível.
-- O servidor responde com uma `Resposta` Protobuf contendo: `status`, `mensagem`, lista de `canais` e `timestamp`.
+A comunicação é dividida em dois padrões:
 
-Todas as mensagens obrigatoriamente incluem o `timestamp` do momento do envio para rastreabilidade.
+**Request-Reply** — clientes enviam requisições ao servidor através de um broker `ROUTER/DEALER`. O broker distribui as requisições entre os servidores disponíveis e devolve a resposta ao cliente correto. Usado para login, criação de canais, listagem de canais e publicação de mensagens.
 
-### Armazenamento
+**Pub/Sub** — um proxy `XPUB/XSUB` independente distribui as mensagens em tempo real. Ao publicar, o servidor encaminha a mensagem ao proxy usando o nome do canal como tópico. Os clientes inscritos naquele canal recebem a mensagem automaticamente.
 
-Cada servidor persiste seus dados em `/data/{SERVER_NAME}_db.json` com:
-- `logins` — histórico de autenticações (usuário + timestamp)
-- `canais` — lista de canais criados
+As publicações são armazenadas no banco de dados contendo o username, o canal, a mensagem e o timestamp.
 
-Cada instância de servidor possui seu próprio volume isolado (`/data/srv1`, `/data/srv2`).
+## Eleição e Sincronização de Relógio
 
----
+Os servidores mantêm um relógio lógico de Lamport para ordenação causal dos eventos. Para o relógio físico, os servidores elegem um coordenador entre si usando o **algoritmo Bully** e sincronizam o tempo com o coordenador eleito usando o **algoritmo de Berkeley**, a cada 15 mensagens processadas.
 
-## Parte 2 — Publisher-Subscriber para publicação em canais
+Um serviço de referência separado é responsável por registrar os servidores, atribuir ranks e receber heartbeats para detectar servidores inativos.
 
-### O que foi implementado
-
-Os bots agora podem publicar mensagens em canais e receber em tempo real as mensagens dos canais nos quais estão inscritos, usando um segundo padrão de comunicação paralelo ao Req-Rep.
-
-### Troca de mensagens
-
-Foi adicionado um **proxy Pub/Sub separado** do broker Req-Rep, conforme requisito:
-
-- Porta `5557` como `XSUB` — recebe publicações dos servidores
-- Porta `5558` como `XPUB` — distribui mensagens para os clientes inscritos
-
-O fluxo de uma publicação funciona assim:
-1. O bot envia uma requisição `publicar_canal` ao servidor via Req-Rep (com `canal`, `mensagem` e `timestamp`).
-2. O servidor publica a mensagem no proxy Pub/Sub usando o **nome do canal como tópico**.
-3. O servidor retorna `ok/erro` ao bot.
-4. Todos os bots inscritos naquele canal recebem a mensagem via Pub/Sub.
-
-A inscrição em canais é feita exclusivamente no cliente: cada bot mantém uma `AssinanteThread` dedicada com socket `SUB` conectado ao proxy, podendo se inscrever em múltiplos tópicos na mesma conexão. Ao receber uma mensagem, exibe: canal, remetente, conteúdo, timestamp de envio e timestamp de recebimento.
-
-Todas as mensagens (tanto a requisição ao servidor quanto a publicação no canal) contêm o `timestamp` de envio.
-
-### Armazenamento
-
-O servidor passou a persistir também as publicações no mesmo arquivo `/data/{SERVER_NAME}_db.json`, adicionando o campo:
-- `publicacoes` — lista de todas as mensagens publicadas, contendo: canal, usuário, mensagem, `timestamp_envio` (do cliente) e `timestamp_recebimento` (do servidor)
-
-Isso permite recuperar o histórico completo de todas as publicações feitas por qualquer bot.
-
----
-
-## 🚀 Como Executar
+## Como executar
 
 ```bash
 docker compose up --build
