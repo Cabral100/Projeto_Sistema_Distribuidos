@@ -5,21 +5,22 @@ package sistema;
 option java_package = "sistema";
 option java_outer_classname = "Mensagens";
 
+
 message Envelope {
-    string funcao = 1;      
-    double timestamp = 2;   
+    string funcao = 1;
+    double timestamp = 2;
     string username = 3;
-    string parametro = 4;   
-    string mensagem = 5;   
-    int64 relogio_logico = 6;  
+    string parametro = 4;
+    string mensagem = 5;
+    int64 relogio_logico = 6;
 }
 
 message Resposta {
-    string status = 1;      
+    string status = 1;
     string mensagem = 2;
-    double timestamp = 3;   
+    double timestamp = 3;
     repeated string canais = 4;
-    int64 relogio_logico = 5; 
+    int64 relogio_logico = 5;
 }
 
 message Publicacao {
@@ -28,10 +29,12 @@ message Publicacao {
     string mensagem = 3;
     double timestamp_envio = 4;
     double timestamp_recebimento = 5;
-    int64 relogio_logico = 6; 
+    int64 relogio_logico = 6;
 }
 
-message ReqReferencia { // "rank", "list", "heartbeat", "get_time"
+
+message ReqReferencia {
+    string funcao = 1;   
     string nome = 2;
     int64 relogio_logico = 3;
 }
@@ -47,4 +50,16 @@ message ResReferencia {
 message ServidorInfo {
     string nome = 1;
     int32 rank = 2;
+}
+
+
+message ReqS2S {
+    string funcao = 1;   
+    int64 relogio_logico = 2;
+}
+
+message ResS2S {
+    bool ok = 1;
+    int64 timestamp = 2; 
+    int64 relogio_logico = 3;
 }

@@ -3,11 +3,11 @@ import time
 import threading
 import mensagens_pb2
 
-HEARTBEAT_TIMEOUT = 60 
+HEARTBEAT_TIMEOUT = 60
 PORTA = 5559
 
-servidores = {}      
-proximo_rank = [1]    
+servidores = {}
+proximo_rank = [1]
 lock = threading.Lock()
 
 relogio_logico = [0]
@@ -41,7 +41,7 @@ def main():
     socket = context.socket(zmq.REP)
     socket.bind(f"tcp://*:{PORTA}")
 
-    print(f"[REFERENCIA] Serviço de referência online na porta {PORTA}...", flush=True)
+    print(f"[REFERENCIA] Servico de referencia online na porta {PORTA}...", flush=True)
 
     t = threading.Thread(target=verificar_heartbeat, daemon=True)
     t.start()
@@ -51,7 +51,7 @@ def main():
         req = mensagens_pb2.ReqReferencia()
         req.ParseFromString(raw)
 
-        rl = atualizar_relogio(req.relogio_logico)
+        atualizar_relogio(req.relogio_logico)
 
         res = mensagens_pb2.ResReferencia()
         agora = time.time()
@@ -71,7 +71,6 @@ def main():
             incrementar_relogio()
             res.status = "ok"
             res.rank = rank
-            res.timestamp = agora
             res.relogio_logico = relogio_logico[0]
 
         elif req.funcao == "list":
@@ -80,7 +79,6 @@ def main():
 
             incrementar_relogio()
             res.status = "ok"
-            res.timestamp = agora
             res.relogio_logico = relogio_logico[0]
             for nome, info in lista:
                 srv = res.servidores.add()
@@ -103,7 +101,6 @@ def main():
 
             incrementar_relogio()
             res.status = "ok"
-            res.timestamp = agora  
             res.relogio_logico = relogio_logico[0]
             print(f"[REFERENCIA] Heartbeat recebido de '{nome}'.", flush=True)
 
