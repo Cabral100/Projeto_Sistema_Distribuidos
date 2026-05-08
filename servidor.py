@@ -5,15 +5,18 @@ import os
 import threading
 import mensagens_pb2
 
-SERVER_NAME   = os.getenv("SERVER_NAME",   "servidor")
+SERVER_NAME    = os.getenv("SERVER_NAME",   "servidor")
 REFERENCIA_URL = os.getenv("REFERENCIA_URL", "tcp://referencia:5559")
 PUBSUB_SUB_URL = os.getenv("PUBSUB_SUB_URL", "tcp://proxy_pubsub:5558")
-S2S_PORT      = 5560         
-SYNC_INTERVALO = 15           
+S2S_PORT       = 5560
+SYNC_INTERVALO = 15
 
 os.makedirs("/data", exist_ok=True)
 DB_PATH = f"/data/{SERVER_NAME}_db.json"
 
+# ---------------------------------------------------------------------------
+# Relogio logico de Lamport
+# ---------------------------------------------------------------------------
 _rl_lock = threading.Lock()
 _relogio_logico = 0
 
@@ -29,6 +32,9 @@ def rl_receber(recebido: int) -> int:
         _relogio_logico = max(_relogio_logico, recebido) + 1
         return _relogio_logico
 
+# ---------------------------------------------------------------------------
+# Relogio fisico sincronizado
+# ---------------------------------------------------------------------------
 _offset = 0
 _offset_lock = threading.Lock()
 
@@ -42,8 +48,11 @@ def aplicar_offset(novo_offset: int):
         _offset = novo_offset
     print(f"[{SERVER_NAME}] Relogio ajustado: offset={novo_offset}s", flush=True)
 
+# ---------------------------------------------------------------------------
+# Eleicao / coordenador
+# ---------------------------------------------------------------------------
 _coord_lock = threading.Lock()
-_coordenador = None          
+_coordenador = None
 _meu_rank    = -1
 _eleicao_em_andamento = False
 
@@ -61,6 +70,11 @@ def set_coordenador(nome):
 def sou_coordenador():
     return get_coordenador() == SERVER_NAME
 
+# ---------------------------------------------------------------------------
+# Persistencia
+# ---------------------------------------------------------------------------
+_db_lock = threading.Lock()
+
 def salvar(db):
     with open(DB_PATH, 'w') as f:
         json.dump(db, f, indent=4)
@@ -75,6 +89,9 @@ db = carregar()
 if "publicacoes" not in db:
     db["publicacoes"] = []
 
+# ---------------------------------------------------------------------------
+# Sockets ZMQ
+# ---------------------------------------------------------------------------
 context = zmq.Context()
 
 socket = context.socket(zmq.REP)
@@ -91,10 +108,13 @@ s2s_rep = context.socket(zmq.REP)
 s2s_rep.bind(f"tcp://0.0.0.0:{S2S_PORT}")
 
 poller = zmq.Poller()
-poller.register(socket,   zmq.POLLIN)
-poller.register(s2s_rep,  zmq.POLLIN)
+poller.register(socket,     zmq.POLLIN)
+poller.register(s2s_rep,    zmq.POLLIN)
 poller.register(sub_socket, zmq.POLLIN)
 
+# ---------------------------------------------------------------------------
+# Comunicacao com o servico de referencia
+# ---------------------------------------------------------------------------
 def obter_rank() -> int:
     ref = context.socket(zmq.REQ)
     ref.setsockopt(zmq.RCVTIMEO, 5000)
@@ -118,7 +138,6 @@ def obter_rank() -> int:
         ref.close()
 
 def obter_lista_servidores():
-    """Retorna lista de ServidorInfo vindos da referencia."""
     ref = context.socket(zmq.REQ)
     ref.setsockopt(zmq.RCVTIMEO, 5000)
     ref.connect(REFERENCIA_URL)
@@ -140,7 +159,6 @@ def obter_lista_servidores():
         ref.close()
 
 def enviar_heartbeat():
-    """Envia heartbeat a referencia. PARTE 4: nao usa mais o timestamp da resposta."""
     ref = context.socket(zmq.REQ)
     ref.setsockopt(zmq.RCVTIMEO, 5000)
     ref.connect(REFERENCIA_URL)
@@ -160,15 +178,10 @@ def enviar_heartbeat():
     finally:
         ref.close()
 
+# ---------------------------------------------------------------------------
+# Eleicao - Algoritmo Bully
+# ---------------------------------------------------------------------------
 def iniciar_eleicao():
-    """
-    Algoritmo Bully (baseado em rank):
-    1. Consulta a referencia pela lista de servidores ativos.
-    2. Envia ReqS2S(funcao="eleicao") para todos com rank maior.
-    3. Se nenhum responder com ok=True, declara-se coordenador e
-       publica no topico "servers".
-    4. Se algum responder, aguarda o anuncio via pub/sub.
-    """
     global _eleicao_em_andamento
     with _coord_lock:
         if _eleicao_em_andamento:
@@ -181,7 +194,6 @@ def iniciar_eleicao():
     candidatos_superiores = [s.nome for s in servidores if s.rank > _meu_rank and s.nome != SERVER_NAME]
 
     recebeu_ok = False
-
     for nome in candidatos_superiores:
         sock = context.socket(zmq.REQ)
         sock.setsockopt(zmq.RCVTIMEO, 1000)
@@ -217,18 +229,16 @@ def iniciar_eleicao():
         with _coord_lock:
             _eleicao_em_andamento = False
 
+# ---------------------------------------------------------------------------
+# Sincronizacao de relogio - Algoritmo de Berkeley
+# ---------------------------------------------------------------------------
 def sincronizar_relogio():
-    """
-    Subordinado envia ReqS2S(funcao="sync") ao coordenador.
-    Recebe ResS2S(timestamp=hora_do_coordenador) e calcula offset.
-    Se o coordenador nao responder, inicia nova eleicao.
-    """
     coord = get_coordenador()
     if coord is None:
         iniciar_eleicao()
         return
     if coord == SERVER_NAME:
-        return  
+        return
 
     sock = context.socket(zmq.REQ)
     sock.setsockopt(zmq.RCVTIMEO, 2000)
@@ -256,8 +266,125 @@ def sincronizar_relogio():
         except Exception:
             pass
 
+# ---------------------------------------------------------------------------
+# REPLICACAO - Replicacao Ativa (Active Replication)
+# ---------------------------------------------------------------------------
+
+def _chave_pub(pub: dict) -> tuple:
+    """Chave de deduplicacao: (canal, username, mensagem, timestamp_envio)."""
+    return (pub["canal"], pub["username"], pub["mensagem"], pub["timestamp_envio"])
+
+def replicar_publicacao(pub: dict):
+    """
+    Envia a publicacao a todos os outros servidores ativos via S2S REQ/REP.
+    A chamada e feita em thread separada para nao bloquear a resposta ao cliente.
+    Servidores que nao respondem sao ignorados - receberao a publicacao via snapshot
+    quando voltarem ao cluster.
+    """
+    servidores = obter_lista_servidores()
+    outros = [s.nome for s in servidores if s.nome != SERVER_NAME]
+
+    for nome in outros:
+        sock = context.socket(zmq.REQ)
+        sock.setsockopt(zmq.RCVTIMEO, 2000)
+        sock.connect(f"tcp://{nome}:{S2S_PORT}")
+        try:
+            req = mensagens_pb2.ReqS2S()
+            req.funcao               = "replicar"
+            req.relogio_logico       = rl_enviar()
+            req.canal                = pub["canal"]
+            req.username             = pub["username"]
+            req.mensagem             = pub["mensagem"]
+            req.timestamp_envio      = pub["timestamp_envio"]
+            req.timestamp_recebimento = pub["timestamp_recebimento"]
+            sock.send(req.SerializeToString())
+            raw = sock.recv()
+            res = mensagens_pb2.ResS2S()
+            res.ParseFromString(raw)
+            rl_receber(res.relogio_logico)
+            if res.ok:
+                print(f"[{SERVER_NAME}] Replicado para {nome}: canal={pub['canal']}", flush=True)
+        except Exception as e:
+            print(f"[{SERVER_NAME}] Falha ao replicar para {nome}: {e}", flush=True)
+        finally:
+            sock.close()
+
+def sincronizar_snapshot_com(nome: str):
+    """
+    Solicita o snapshot completo do banco de dados de outro servidor.
+    Usado na inicializacao para obter o estado atual do cluster.
+    """
+    sock = context.socket(zmq.REQ)
+    sock.setsockopt(zmq.RCVTIMEO, 5000)
+    sock.connect(f"tcp://{nome}:{S2S_PORT}")
+    try:
+        req = mensagens_pb2.ReqS2S()
+        req.funcao = "snapshot"
+        req.relogio_logico = rl_enviar()
+        sock.send(req.SerializeToString())
+        raw = sock.recv()
+        res = mensagens_pb2.ResS2S()
+        res.ParseFromString(raw)
+        rl_receber(res.relogio_logico)
+        if res.ok and res.snapshot_json:
+            dados = json.loads(res.snapshot_json)
+            print(f"[{SERVER_NAME}] Snapshot recebido de {nome}: "
+                  f"{len(dados.get('publicacoes', []))} publicacoes", flush=True)
+            return dados
+    except Exception as e:
+        print(f"[{SERVER_NAME}] Falha ao obter snapshot de {nome}: {e}", flush=True)
+    finally:
+        sock.close()
+    return None
+
+def aplicar_snapshot(dados_remotos: dict):
+    """
+    Mescla o snapshot remoto no banco local usando deduplicacao por chave.
+    Mantem publicacoes locais que o remoto nao tem e adiciona as que faltam.
+    """
+    global db
+    with _db_lock:
+        chaves_locais = {_chave_pub(p) for p in db.get("publicacoes", [])}
+
+        novas = [
+            p for p in dados_remotos.get("publicacoes", [])
+            if _chave_pub(p) not in chaves_locais
+        ]
+        if novas:
+            db["publicacoes"].extend(novas)
+            print(f"[{SERVER_NAME}] Snapshot aplicado: +{len(novas)} publicacoes novas", flush=True)
+
+        canais_remotos = set(dados_remotos.get("canais", []))
+        canais_locais  = set(db.get("canais", []))
+        novos_canais   = canais_remotos - canais_locais
+        if novos_canais:
+            db["canais"].extend(list(novos_canais))
+            print(f"[{SERVER_NAME}] Canais adicionados: {novos_canais}", flush=True)
+
+        salvar(db)
+
+def inicializar_replica():
+    """
+    Executado na inicializacao: tenta obter o snapshot de cada servidor ativo
+    e mescla o primeiro que responder com sucesso.
+    """
+    print(f"[{SERVER_NAME}] Iniciando sincronizacao de snapshot...", flush=True)
+    servidores = obter_lista_servidores()
+    outros = [s.nome for s in servidores if s.nome != SERVER_NAME]
+
+    for nome in outros:
+        dados = sincronizar_snapshot_com(nome)
+        if dados:
+            aplicar_snapshot(dados)
+            print(f"[{SERVER_NAME}] Replica inicializada a partir de {nome}.", flush=True)
+            return
+
+    print(f"[{SERVER_NAME}] Nenhum servidor disponivel para snapshot. Iniciando com dados locais.", flush=True)
+
+# ---------------------------------------------------------------------------
+# Thread S2S - atende chamadas de outros servidores
+# ---------------------------------------------------------------------------
 def thread_s2s():
-    """Atende chamadas REP de outros servidores."""
     while True:
         try:
             raw = s2s_rep.recv()
@@ -286,12 +413,45 @@ def thread_s2s():
             res.timestamp = int(tempo_sincronizado())
             s2s_rep.send(res.SerializeToString())
 
+        elif req.funcao == "replicar":
+            # Recebe uma publicacao replicada de outro servidor
+            pub = {
+                "canal":                req.canal,
+                "username":             req.username,
+                "mensagem":             req.mensagem,
+                "timestamp_envio":      req.timestamp_envio,
+                "timestamp_recebimento": req.timestamp_recebimento,
+                "relogio_logico":       req.relogio_logico,
+            }
+            with _db_lock:
+                chaves_locais = {_chave_pub(p) for p in db.get("publicacoes", [])}
+                if _chave_pub(pub) not in chaves_locais:
+                    db["publicacoes"].append(pub)
+                    salvar(db)
+                    print(f"[{SERVER_NAME}] Replica recebida: canal={pub['canal']} "
+                          f"user={pub['username']}", flush=True)
+                else:
+                    print(f"[{SERVER_NAME}] Replica duplicada ignorada: canal={pub['canal']}", flush=True)
+            res.ok = True
+            s2s_rep.send(res.SerializeToString())
+
+        elif req.funcao == "snapshot":
+            # Envia o estado completo do banco local ao servidor solicitante
+            with _db_lock:
+                snapshot = json.dumps(db)
+            res.ok = True
+            res.snapshot_json = snapshot
+            s2s_rep.send(res.SerializeToString())
+            print(f"[{SERVER_NAME}] Snapshot enviado.", flush=True)
+
         else:
             res.ok = False
             s2s_rep.send(res.SerializeToString())
 
+# ---------------------------------------------------------------------------
+# Thread SUB - escuta topico 'servers' para atualizar coordenador
+# ---------------------------------------------------------------------------
 def thread_sub():
-    """Escuta o topico 'servers' e atualiza o coordenador quando anunciado."""
     while True:
         try:
             topico, payload = sub_socket.recv_multipart()
@@ -304,6 +464,9 @@ def thread_sub():
         except Exception as e:
             print(f"[{SERVER_NAME}] Erro no sub: {e}", flush=True)
 
+# ---------------------------------------------------------------------------
+# Inicializacao
+# ---------------------------------------------------------------------------
 time.sleep(2)
 _meu_rank = obter_rank()
 print(f"[{SERVER_NAME}] Online (rank={_meu_rank})...", flush=True)
@@ -312,10 +475,15 @@ threading.Thread(target=thread_s2s,  daemon=True).start()
 threading.Thread(target=thread_sub,  daemon=True).start()
 
 time.sleep(3)
-threading.Thread(target=iniciar_eleicao, daemon=True).start()
+# Sincroniza o snapshot antes de entrar em operacao
+threading.Thread(target=inicializar_replica, daemon=True).start()
+threading.Thread(target=iniciar_eleicao,     daemon=True).start()
 
 _msg_count = 0
 
+# ---------------------------------------------------------------------------
+# Loop principal
+# ---------------------------------------------------------------------------
 while True:
     socks = dict(poller.poll(1000))
 
@@ -329,7 +497,7 @@ while True:
         res = mensagens_pb2.Resposta()
         res.timestamp = tempo_sincronizado()
         ts_formatado = time.strftime("%H:%M:%S")
-        coord_atual = get_coordenador() or "?"
+        coord_atual  = get_coordenador() or "?"
 
         print(
             f"[{ts_formatado}] [{SERVER_NAME}] Req: {envelope.funcao} de {envelope.username} "
@@ -338,57 +506,73 @@ while True:
         )
 
         if envelope.funcao == "login":
-            db["logins"].append({"user": envelope.username, "ts": envelope.timestamp})
+            with _db_lock:
+                db["logins"].append({"user": envelope.username, "ts": envelope.timestamp})
+                salvar(db)
             res.status, res.mensagem = "ok", f"Login aceito no {SERVER_NAME}"
 
         elif envelope.funcao == "criar_canal":
-            if envelope.parametro not in db["canais"]:
-                db["canais"].append(envelope.parametro)
-                res.status, res.mensagem = "ok", "Canal criado"
-            else:
-                res.status, res.mensagem = "erro", "Canal ja existe"
+            with _db_lock:
+                if envelope.parametro not in db["canais"]:
+                    db["canais"].append(envelope.parametro)
+                    salvar(db)
+                    res.status, res.mensagem = "ok", "Canal criado"
+                else:
+                    res.status, res.mensagem = "erro", "Canal ja existe"
 
         elif envelope.funcao == "listar_canais":
+            with _db_lock:
+                canais = list(db["canais"])
             res.status = "ok"
-            res.canais.extend(db["canais"])
+            res.canais.extend(canais)
 
         elif envelope.funcao == "publicar_canal":
-            canal        = envelope.parametro
-            mensagem_txt = envelope.mensagem
-            ts_envio     = envelope.timestamp
+            canal         = envelope.parametro
+            mensagem_txt  = envelope.mensagem
+            ts_envio      = envelope.timestamp
             ts_recebimento = tempo_sincronizado()
 
-            if canal not in db["canais"]:
+            with _db_lock:
+                canal_existe = canal in db["canais"]
+
+            if not canal_existe:
                 res.status, res.mensagem = "erro", f"Canal '{canal}' nao existe"
             else:
-                db["publicacoes"].append({
-                    "canal": canal,
-                    "username": envelope.username,
-                    "mensagem": mensagem_txt,
-                    "timestamp_envio": ts_envio,
+                pub = {
+                    "canal":                canal,
+                    "username":             envelope.username,
+                    "mensagem":             mensagem_txt,
+                    "timestamp_envio":      ts_envio,
                     "timestamp_recebimento": ts_recebimento,
-                    "relogio_logico": _relogio_logico,
-                })
+                    "relogio_logico":       _relogio_logico,
+                }
+                with _db_lock:
+                    db["publicacoes"].append(pub)
+                    salvar(db)
 
+                # Publica via Pub/Sub para clientes inscritos
                 pub_msg = mensagens_pb2.Publicacao()
-                pub_msg.canal = canal
-                pub_msg.username = envelope.username
-                pub_msg.mensagem = mensagem_txt
-                pub_msg.timestamp_envio = ts_envio
+                pub_msg.canal               = canal
+                pub_msg.username            = envelope.username
+                pub_msg.mensagem            = mensagem_txt
+                pub_msg.timestamp_envio     = ts_envio
                 pub_msg.timestamp_recebimento = ts_recebimento
-                pub_msg.relogio_logico = _relogio_logico
-
+                pub_msg.relogio_logico      = _relogio_logico
                 pub_socket.send_multipart([canal.encode(), pub_msg.SerializeToString()])
 
-                res.status  = "ok"
+                # Replica para os demais servidores em background
+                threading.Thread(
+                    target=replicar_publicacao, args=(pub,), daemon=True
+                ).start()
+
+                res.status   = "ok"
                 res.mensagem = f"Publicado no canal '{canal}'"
                 print(f"[{ts_formatado}] [{SERVER_NAME}] Publicou em '{canal}': {mensagem_txt}", flush=True)
 
         res.relogio_logico = rl_enviar()
-        salvar(db)
         socket.send(res.SerializeToString())
 
         _msg_count += 1
         if _msg_count % SYNC_INTERVALO == 0:
-            threading.Thread(target=enviar_heartbeat,   daemon=True).start()
+            threading.Thread(target=enviar_heartbeat,    daemon=True).start()
             threading.Thread(target=sincronizar_relogio, daemon=True).start()

@@ -56,10 +56,17 @@ message ServidorInfo {
 message ReqS2S {
     string funcao = 1;   
     int64 relogio_logico = 2;
+    string canal = 3;
+    string username = 4;
+    string mensagem = 5;
+    double timestamp_envio = 6;
+    double timestamp_recebimento = 7;
+    string snapshot_json = 8;
 }
 
 message ResS2S {
     bool ok = 1;
     int64 timestamp = 2; 
     int64 relogio_logico = 3;
+    string snapshot_json = 4;
 }
