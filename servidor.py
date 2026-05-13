@@ -15,9 +15,7 @@ SYNC_INTERVALO = 15
 os.makedirs("/data", exist_ok=True)
 DB_PATH = f"/data/{SERVER_NAME}_db.sqlite"
 
-# ---------------------------------------------------------------------------
-# Relogio logico de Lamport
-# ---------------------------------------------------------------------------
+
 _rl_lock = threading.Lock()
 _relogio_logico = 0
 
@@ -33,9 +31,7 @@ def rl_receber(recebido: int) -> int:
         _relogio_logico = max(_relogio_logico, recebido) + 1
         return _relogio_logico
 
-# ---------------------------------------------------------------------------
-# Relogio fisico sincronizado
-# ---------------------------------------------------------------------------
+
 _offset = 0
 _offset_lock = threading.Lock()
 
@@ -49,9 +45,7 @@ def aplicar_offset(novo_offset: int):
         _offset = novo_offset
     print(f"[{SERVER_NAME}] Relogio ajustado: offset={novo_offset}s", flush=True)
 
-# ---------------------------------------------------------------------------
-# Eleicao / coordenador
-# ---------------------------------------------------------------------------
+
 _coord_lock = threading.Lock()
 _coordenador = None
 _meu_rank    = -1
@@ -71,9 +65,7 @@ def set_coordenador(nome):
 def sou_coordenador():
     return get_coordenador() == SERVER_NAME
 
-# ---------------------------------------------------------------------------
-# Persistencia - SQLite
-# ---------------------------------------------------------------------------
+
 _db_lock = threading.Lock()
 
 def init_db():
@@ -179,9 +171,7 @@ def db_aplicar_replica(evento: mensagens_pb2.ReplicaEvento):
         finally:
             conn.close()
 
-# ---------------------------------------------------------------------------
-# Sockets ZMQ
-# ---------------------------------------------------------------------------
+
 context = zmq.Context()
 
 socket = context.socket(zmq.REP)
@@ -194,7 +184,6 @@ _pub_lock = threading.Lock()
 sub_socket = context.socket(zmq.SUB)
 sub_socket.connect(PUBSUB_SUB_URL)
 sub_socket.setsockopt_string(zmq.SUBSCRIBE, "servers")
-# NOVO: inscreve no topico "replicas" para replicacao passiva por push
 sub_socket.setsockopt_string(zmq.SUBSCRIBE, "replicas")
 
 s2s_rep = context.socket(zmq.REP)
@@ -205,9 +194,7 @@ poller.register(socket,     zmq.POLLIN)
 poller.register(s2s_rep,    zmq.POLLIN)
 poller.register(sub_socket, zmq.POLLIN)
 
-# ---------------------------------------------------------------------------
-# Helpers de socket temporario
-# ---------------------------------------------------------------------------
+
 def _criar_ref_socket():
     ref = context.socket(zmq.REQ)
     ref.setsockopt(zmq.RCVTIMEO, 5000)
@@ -224,9 +211,7 @@ def _criar_s2s_socket(nome):
     sock.connect(f"tcp://{nome}:{S2S_PORT}")
     return sock
 
-# ---------------------------------------------------------------------------
-# Comunicacao com o servico de referencia
-# ---------------------------------------------------------------------------
+
 def obter_rank() -> int:
     ref = _criar_ref_socket()
     try:
@@ -284,9 +269,7 @@ def enviar_heartbeat():
     finally:
         ref.close()
 
-# ---------------------------------------------------------------------------
-# Eleicao - Algoritmo Bully
-# ---------------------------------------------------------------------------
+
 def iniciar_eleicao():
     global _eleicao_em_andamento
     with _coord_lock:
@@ -334,9 +317,7 @@ def iniciar_eleicao():
         with _coord_lock:
             _eleicao_em_andamento = False
 
-# ---------------------------------------------------------------------------
-# Sincronizacao de relogio - Algoritmo de Berkeley
-# ---------------------------------------------------------------------------
+
 def sincronizar_relogio():
     coord = get_coordenador()
     if coord is None:
@@ -364,12 +345,7 @@ def sincronizar_relogio():
     finally:
         sock.close()
 
-# ---------------------------------------------------------------------------
-# REPLICACAO PASSIVA POR PUSH
-# Publica no topico "replicas" via PubSub - todos os outros servidores
-# inscritos recebem e persistem localmente. Nao ha comunicacao direta
-# entre servidores para replicar - usa a infraestrutura PubSub ja existente.
-# ---------------------------------------------------------------------------
+
 def publicar_replica(tipo_evento: str, username: str = "", canal: str = "",
                      mensagem: str = "", timestamp: float = None):
     """
@@ -391,9 +367,7 @@ def publicar_replica(tipo_evento: str, username: str = "", canal: str = "",
     with _pub_lock:
         pub_socket.send_multipart([b"replicas", evento.SerializeToString()])
 
-# ---------------------------------------------------------------------------
-# Thread S2S - apenas eleicao e sync (replicacao foi para PubSub)
-# ---------------------------------------------------------------------------
+
 def thread_s2s():
     while True:
         try:
@@ -438,9 +412,7 @@ def thread_s2s():
             except Exception as e:
                 print(f"[{SERVER_NAME}] Erro ao responder funcao desconhecida: {e}", flush=True)
 
-# ---------------------------------------------------------------------------
-# Thread SUB - escuta "servers" (coordenador) e "replicas" (replicacao passiva)
-# ---------------------------------------------------------------------------
+
 def thread_sub():
     while True:
         try:
@@ -456,7 +428,6 @@ def thread_sub():
             elif topico == b"replicas":
                 evento = mensagens_pb2.ReplicaEvento()
                 evento.ParseFromString(payload)
-                # Ignora replicas geradas pelo proprio servidor
                 if evento.servidor_origem == SERVER_NAME:
                     continue
                 rl_receber(evento.relogio_logico)
@@ -470,9 +441,6 @@ def thread_sub():
         except Exception as e:
             print(f"[{SERVER_NAME}] Erro no sub: {e}", flush=True)
 
-# ---------------------------------------------------------------------------
-# Inicializacao
-# ---------------------------------------------------------------------------
 init_db()
 time.sleep(2)
 _meu_rank = obter_rank()
@@ -486,9 +454,7 @@ threading.Thread(target=iniciar_eleicao, daemon=True).start()
 
 _msg_count = 0
 
-# ---------------------------------------------------------------------------
-# Loop principal
-# ---------------------------------------------------------------------------
+
 while True:
     socks = dict(poller.poll(1000))
 
@@ -512,7 +478,6 @@ while True:
 
         if envelope.funcao == "login":
             db_inserir_login(envelope.username, envelope.timestamp)
-            # Replica passiva por push
             publicar_replica("login", username=envelope.username,
                              timestamp=envelope.timestamp)
             res.status  = "ok"
@@ -546,7 +511,6 @@ while True:
                 db_inserir_publicacao(canal, envelope.username, mensagem_txt,
                                       ts_envio, ts_receb, _relogio_logico)
 
-                # Pub/Sub para clientes inscritos
                 pub_msg = mensagens_pb2.Publicacao()
                 pub_msg.canal               = canal
                 pub_msg.username            = envelope.username
@@ -557,7 +521,6 @@ while True:
                 with _pub_lock:
                     pub_socket.send_multipart([canal.encode(), pub_msg.SerializeToString()])
 
-                # Replica passiva por push (nao bloqueia a resposta ao cliente)
                 threading.Thread(
                     target=publicar_replica,
                     args=("mensagem",),

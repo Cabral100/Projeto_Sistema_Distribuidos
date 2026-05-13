@@ -51,7 +51,6 @@ message ServidorInfo {
     int32 rank = 2;
 }
 
-// Mantido apenas para eleicao e sync S2S (nao mais para replicacao)
 message ReqS2S {
     string funcao = 1;   
     int64 relogio_logico = 2;
@@ -70,10 +69,9 @@ message ResS2S {
     string snapshot_json = 4;
 }
 
-// NOVO: evento de replicacao passiva por push via topico "replicas"
 message ReplicaEvento {
     string servidor_origem = 1;
-    string tipo_evento = 2;   // "login" | "canal" | "mensagem"
+    string tipo_evento = 2;   
     string username = 3;
     string canal = 4;
     string mensagem = 5;

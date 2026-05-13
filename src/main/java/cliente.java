@@ -34,7 +34,6 @@ public class cliente {
         System.out.println("[" + dtf.format(LocalTime.now()) + "] [" + user + "] [RL=" + relogioLogico.get() + "] " + msg);
     }
 
-    // ── Thread assinante PubSub ───────────────────────────────────────────
     static class AssinanteThread extends Thread {
         private final ZContext ctx;
         private final String pubsubUrl;
@@ -126,7 +125,6 @@ public class cliente {
         }
     }
 
-    // ── Envia e recebe com retry automatico ao reconectar ────────────────
     private static byte[] enviarComRetry(ZContext ctx, ZMQ.Socket[] socketHolder,
                                           String brokerUrl, byte[] payload, String user) {
         int tentativas = 3;
@@ -139,7 +137,6 @@ public class cliente {
             } catch (Exception e) {
                 log(user, "Erro no socket (" + e.getMessage() + "), reconectando...");
             }
-            // Fecha socket com problema e cria um novo
             try { socketHolder[0].close(); } catch (Exception ignored) {}
             ZMQ.Socket novoSocket = ctx.createSocket(ZMQ.REQ);
             novoSocket.connect(brokerUrl);
@@ -171,7 +168,6 @@ public class cliente {
             assinante = new AssinanteThread(ctx, pubsubUrl, user);
             assinante.start();
 
-            // ── Login ────────────────────────────────────────────────────
             boolean logado = false;
             while (!logado) {
                 byte[] reply = enviarComRetry(ctx, socketHolder, brokerUrl,
@@ -191,9 +187,7 @@ public class cliente {
                 if (!logado) Thread.sleep(2000);
             }
 
-            // ── Loop principal ───────────────────────────────────────────
             while (true) {
-                // Listar canais
                 byte[] reply = enviarComRetry(ctx, socketHolder, brokerUrl,
                     Envelope.newBuilder()
                         .setFuncao("listar_canais")
@@ -208,7 +202,6 @@ public class cliente {
                 List<String> canais = new ArrayList<>(resLista.getCanaisList());
                 log(user, "Canais disponiveis: " + canais);
 
-                // Criar canal se necessario
                 if (canais.size() < 5) {
                     String novoCanal = "canal-" + user + "-" + rng.nextInt(1000);
                     byte[] replyCanal = enviarComRetry(ctx, socketHolder, brokerUrl,
@@ -224,7 +217,6 @@ public class cliente {
                         rlReceber(resCanal.getRelogioLogico());
                         log(user, "Criar canal '" + novoCanal + "': " + resCanal.getStatus());
                     }
-                    // Atualiza lista
                     byte[] replyLista2 = enviarComRetry(ctx, socketHolder, brokerUrl,
                         Envelope.newBuilder()
                             .setFuncao("listar_canais")
